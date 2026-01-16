@@ -15,12 +15,37 @@ export class AppointmentService {
 
   async create(data: Partial<Appointment>): Promise<Appointment> {
     return await AppDataSource.transaction(async (manager) => {
+      // Convertir fechaHora a Date si viene como string desde el frontend
+      let fechaHoraDate: Date;
+      
+      if (typeof data.fechaHora === 'string') {
+        fechaHoraDate = new Date(data.fechaHora);
+        // Validar si la conversión fue exitosa
+        if (isNaN(fechaHoraDate.getTime())) {
+          throw {
+            status: 400,
+            message: 'Formato de fecha inválido',
+            code: 'INVALID_DATE_FORMAT',
+          };
+        }
+        // Actualizar data.fechaHora con el objeto Date
+        data.fechaHora = fechaHoraDate;
+      } else if (data.fechaHora instanceof Date) {
+        fechaHoraDate = data.fechaHora;
+      } else {
+        throw {
+          status: 400,
+          message: 'Fecha no proporcionada o formato incorrecto',
+          code: 'MISSING_DATE',
+        };
+      }
+
       // Validar que el médico y paciente existen
       await this.validateDoctor(data.medicoId!);
       await this.validatePatient(data.pacienteId!);
 
-      // Validar horario laboral
-      this.validateWorkingHours(data.fechaHora!);
+      // Validar horario laboral (ahora fechaHoraDate es un objeto Date válido)
+      this.validateWorkingHours(fechaHoraDate);
 
       // CRÍTICO: Verificar disponibilidad con LOCK PESIMISTA
       const conflict = await manager
@@ -82,6 +107,15 @@ export class AppointmentService {
   }
 
   private validateWorkingHours(fecha: Date): void {
+    // Asegurar que es un objeto Date válido
+    if (!(fecha instanceof Date) || isNaN(fecha.getTime())) {
+      throw {
+        status: 400,
+        message: 'Fecha inválida para validar horario',
+        code: 'INVALID_DATE',
+      };
+    }
+
     const day = fecha.getDay();
     const hour = fecha.getHours();
 
@@ -131,6 +165,19 @@ export class AppointmentService {
     const appointment = await this.findById(id);
     if (!appointment) {
       throw { status: 404, message: 'Cita no encontrada', code: 'NOT_FOUND' };
+    }
+
+    // Si se actualiza fechaHora y viene como string, convertirla
+    if (data.fechaHora && typeof data.fechaHora === 'string') {
+      const newDate = new Date(data.fechaHora);
+      if (isNaN(newDate.getTime())) {
+        throw {
+          status: 400,
+          message: 'Formato de fecha inválido en actualización',
+          code: 'INVALID_DATE_FORMAT',
+        };
+      }
+      data.fechaHora = newDate;
     }
 
     Object.assign(appointment, data);
