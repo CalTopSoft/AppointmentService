@@ -1,36 +1,54 @@
-import { getChannel } from '../config/queue';
+// services/QueueService.ts
+import { redis, isRedisConnected } from '../config/redis';
 
 export class QueueService {
-  private channel: any;
+  private readonly AUDIT_CHANNEL = 'audit-events';
+  private redisAvailable: boolean = false;
 
   constructor() {
-    this.channel = getChannel();
+    this.checkRedisConnection();
+  }
+
+  private async checkRedisConnection(): Promise<void> {
+    this.redisAvailable = await isRedisConnected();
+    if (this.redisAvailable) {
+      console.log('✅ QueueService using Redis (Upstash)');
+    } else {
+      console.warn('⚠️ QueueService: Redis not available');
+    }
   }
 
   async publish(routingKey: string, data: any): Promise<void> {
-    if (!this.channel) {
-      console.warn('⚠️  Queue not available, skipping event publishing');
+    if (!this.redisAvailable) {
+      console.warn('⚠️ Queue not available, skipping event publishing');
       return;
     }
 
     try {
-      const exchange = 'audit-exchange';
       const message = JSON.stringify({
         service: 'appointment-service',
         action: routingKey,
         entityType: 'appointment',
         entityId: data.id,
-        data,
-        timestamp: new Date(),
+        data: data,
+        timestamp: new Date().toISOString()
       });
 
-      this.channel.publish(exchange, routingKey, Buffer.from(message), {
-        persistent: true,
+      // Publicar al canal de Redis
+      await redis.publish(this.AUDIT_CHANNEL, message);
+      
+      console.log(`📤 Event published to Redis: ${routingKey}`, {
+        channel: this.AUDIT_CHANNEL,
+        entityId: data.id,
+        timestamp: new Date().toISOString()
       });
 
-      console.log(`📤 Event published: ${routingKey}`);
-    } catch (error) {
-      console.error('Error publishing to queue:', error);
+    } catch (error: any) {
+      console.error('❌ Error publishing to Redis:', error.message);
+      // Marcar Redis como no disponible temporalmente
+      this.redisAvailable = false;
+      // Intentar reconectar después de 30 segundos
+      setTimeout(() => this.checkRedisConnection(), 30000);
     }
   }
 }
