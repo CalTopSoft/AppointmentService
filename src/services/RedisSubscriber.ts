@@ -40,7 +40,7 @@ export class RedisSubscriber {
       }
     });
 
-    redis.on('error', (err) => {
+    redis.on('error', (err: Error) => {
       console.error('❌ Redis subscriber error:', err.message);
       this.isSubscribed = false;
     });
@@ -65,7 +65,7 @@ export class RedisSubscriber {
 
     } catch (error: any) {
       console.error('❌ Error processing Redis message:', error.message, {
-        rawMessage: message.substring(0, 200) // Log parcial del mensaje
+        rawMessage: message.substring(0, 200)
       });
     }
   }
